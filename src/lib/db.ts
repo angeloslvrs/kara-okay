@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 export type DB = Database.Database;
 
-const SCHEMA = `
+const SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS singers (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
@@ -48,6 +48,10 @@ CREATE INDEX IF NOT EXISTS idx_singers_cookie ON singers(cookie_token);
 CREATE INDEX IF NOT EXISTS idx_singers_oidc ON singers(oidc_sub);
 `;
 
+// Append-only. Each entry is a SQL string applied once when user_version is below its index+1.
+// Adding a new migration: push the next ALTER/CREATE here; never edit a past entry.
+const MIGRATIONS: string[] = [SCHEMA_V1];
+
 const DEFAULT_SETTINGS: Record<string, string> = {
   queue_mode: 'fifo',
   stage_immersive: '0',
@@ -56,7 +60,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
 
 export function migrate(db: DB): void {
   const run = db.transaction(() => {
-    db.exec(SCHEMA);
+    const version = db.pragma('user_version', { simple: true }) as number;
+    if (version >= MIGRATIONS.length) return;
+    for (let i = version; i < MIGRATIONS.length; i++) {
+      db.exec(MIGRATIONS[i]);
+    }
+    db.pragma(`user_version = ${MIGRATIONS.length}`);
     const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insert.run(k, v);
   });
