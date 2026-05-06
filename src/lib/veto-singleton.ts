@@ -1,9 +1,9 @@
-import { VetoStore, type VetoEvent } from './veto';
+import { VetoStore, type VetoEvent, type PendingVeto } from './veto';
 import { getBus } from './sse';
 import { getDb } from './db';
 import { findEntry, markStatus, getActiveQueue, getCurrent } from './queue';
 import { getSettings } from './settings';
-import { updateLastSang } from './singers';
+import { updateLastSang, findById as findSinger } from './singers';
 
 let _store: VetoStore | null = null;
 
@@ -20,16 +20,27 @@ function applyApproval(entryId: string, action: 'restart' | 'skip') {
   getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
 }
 
+function hydrateVeto(veto: PendingVeto) {
+  const singer = findSinger(getDb(), veto.singer_id);
+  return { ...veto, singer };
+}
+
 function emit(e: VetoEvent) {
   const bus = getBus();
   if (e.kind === 'pending') {
-    bus.broadcast('veto.pending', { veto: e.veto });
+    bus.broadcast('veto.pending', { veto: hydrateVeto(e.veto) });
   } else if (e.kind === 'approved') {
-    bus.broadcast('veto.approved', { veto_id: e.veto_id, action: e.action, entry_id: e.entry_id });
+    const singer = findSinger(getDb(), getApprovalSingerId(e.entry_id));
+    bus.broadcast('veto.approved', { veto_id: e.veto_id, action: e.action, entry_id: e.entry_id, singer });
     applyApproval(e.entry_id, e.action);
   } else {
     bus.broadcast('veto.denied', { veto_id: e.veto_id });
   }
+}
+
+function getApprovalSingerId(entryId: string): string {
+  const entry = findEntry(getDb(), entryId);
+  return entry?.singer.id ?? '';
 }
 
 export function getVetoStore(): VetoStore {

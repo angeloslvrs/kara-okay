@@ -8,6 +8,7 @@ import { COOKIE_NAME, STAGE_TAB_COOKIE } from '@/lib/auth/session';
 import { registerGuest } from '@/lib/singers';
 import { enqueue, markStatus, findEntry } from '@/lib/queue';
 import { resetVetoStoreForTest } from '@/lib/veto-singleton';
+import { getBus } from '@/lib/sse';
 
 beforeEach(() => { vi.useFakeTimers(); freshDb(); resetVetoStoreForTest(); });
 afterEach(() => vi.useRealTimers());
@@ -75,6 +76,50 @@ describe('veto flow', () => {
     }));
     vi.advanceTimersByTime(5_100);
     expect(findEntry(db, entry_id)?.status).toBe('skipped');
+  });
+
+  it('veto.pending SSE event carries hydrated singer', async () => {
+    const { cookie_token, entry_id } = await setupPlaying();
+    const events: Array<{ event: string; data: any }> = [];
+    const unsub = getBus().subscribe((event, data) => { events.push({ event, data }); });
+    try {
+      await actionPOST(makeRequest('/api/singer/action', {
+        method: 'POST',
+        cookies: { [COOKIE_NAME]: cookie_token },
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'skip', entry_id }),
+      }));
+    } finally { unsub(); }
+    const pending = events.find((e) => e.event === 'veto.pending');
+    expect(pending).toBeDefined();
+    expect(pending!.data.veto.singer).toBeDefined();
+    expect(pending!.data.veto.singer.display_name).toBe('A');
+    expect(pending!.data.veto.singer.id).toBeDefined();
+  });
+
+  it('veto.approved SSE event carries hydrated singer', async () => {
+    const { cookie_token, entry_id } = await setupPlaying();
+    const res = await actionPOST(makeRequest('/api/singer/action', {
+      method: 'POST',
+      cookies: { [COOKIE_NAME]: cookie_token },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'skip', entry_id }),
+    }));
+    const { veto_id } = await readJson(res);
+    const events: Array<{ event: string; data: any }> = [];
+    const unsub = getBus().subscribe((event, data) => { events.push({ event, data }); });
+    try {
+      await vetoPOST(makeRequest(`/api/veto/${veto_id}`, {
+        method: 'POST',
+        cookies: { [STAGE_TAB_COOKIE]: 'tab-1' },
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision: 'allow' }),
+      }), { params: Promise.resolve({ id: veto_id }) });
+    } finally { unsub(); }
+    const approved = events.find((e) => e.event === 'veto.approved');
+    expect(approved).toBeDefined();
+    expect(approved!.data.singer).toBeDefined();
+    expect(approved!.data.singer.display_name).toBe('A');
   });
 
   it('403 vetoing without stage cookie', async () => {
