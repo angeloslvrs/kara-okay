@@ -60,9 +60,37 @@ describe('POST /api/stage/heartbeat', () => {
     expect(res.status).toBe(200);
   });
 
-  it('404 for unknown tab', async () => {
+  it('403 when cookie is missing', async () => {
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
     const res = await hbPOST(makeRequest('/api/stage/heartbeat', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'nope' }),
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it('403 when cookie does not match body tab_id', async () => {
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    const res = await hbPOST(makeRequest('/api/stage/heartbeat', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-other' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it('404 for unknown tab (with matching cookie)', async () => {
+    const res = await hbPOST(makeRequest('/api/stage/heartbeat', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'nope' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tab_id: 'nope' }),
     }));
     expect(res.status).toBe(404);
   });
@@ -145,5 +173,30 @@ describe('POST /api/stage/release', () => {
       body: JSON.stringify({ tab_id: 'tab-1' }),
     }));
     expect(res.status).toBe(200);
+  });
+
+  it('403 when cookie is missing', async () => {
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    const res = await releasePOST(makeRequest('/api/stage/release', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it('403 when cookie does not match body tab_id', async () => {
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    const res = await releasePOST(makeRequest('/api/stage/release', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-other' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    expect(res.status).toBe(403);
   });
 });
