@@ -7,7 +7,8 @@ import { POST as hbPOST } from '@/app/api/stage/heartbeat/route';
 import { POST as actionPOST } from '@/app/api/stage/action/route';
 import { STAGE_TAB_COOKIE } from '@/lib/auth/session';
 import { registerGuest } from '@/lib/singers';
-import { enqueue, markStatus } from '@/lib/queue';
+import { enqueue, markStatus, findEntry } from '@/lib/queue';
+import { getDb } from '@/lib/db';
 
 beforeEach(() => { freshDb(); });
 
@@ -90,6 +91,45 @@ describe('POST /api/stage/action', () => {
       body: JSON.stringify({ action: 'skip' }),
     }));
     expect(res.status).toBe(200);
+  });
+
+  it('play flips ready -> playing for given entry_id', async () => {
+    const db = freshDb();
+    const { singer } = registerGuest(db, 'A');
+    const e = enqueue(db, singer.id, { youtube_id: 'y', title: 't', channel: null, duration_sec: null, thumbnail_url: null });
+    markStatus(db, e.id, 'ready');
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    const res = await actionPOST(makeRequest('/api/stage/action', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-1' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'play', entry_id: e.id }),
+    }));
+    expect(res.status).toBe(200);
+    expect(findEntry(db, e.id)?.status).toBe('playing');
+  });
+
+  it('finish flips playing -> played and bumps last_sang_at', async () => {
+    const db = freshDb();
+    const { singer } = registerGuest(db, 'A');
+    const e = enqueue(db, singer.id, { youtube_id: 'y', title: 't', channel: null, duration_sec: null, thumbnail_url: null });
+    markStatus(db, e.id, 'playing');
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    const before = Date.now();
+    const res = await actionPOST(makeRequest('/api/stage/action', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-1' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'finish' }),
+    }));
+    expect(res.status).toBe(200);
+    expect(findEntry(db, e.id)?.status).toBe('played');
+    const row = getDb().prepare('SELECT last_sang_at FROM singers WHERE id=?').get(singer.id) as { last_sang_at: number | null };
+    expect(row.last_sang_at).toBeGreaterThanOrEqual(before);
   });
 });
 

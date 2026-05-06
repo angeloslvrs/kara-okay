@@ -3,11 +3,12 @@ import { jsonOk, jsonError } from '@/lib/api/respond';
 import { cookiesFromRequest } from '@/lib/api/cookies';
 import { getStageTab } from '@/lib/auth/session';
 import { getActiveStage } from '@/lib/stage';
-import { getCurrent, markStatus, getActiveQueue } from '@/lib/queue';
+import { getCurrent, markStatus, getActiveQueue, findEntry } from '@/lib/queue';
 import { getSettings } from '@/lib/settings';
+import { updateLastSang } from '@/lib/singers';
 import { getBus } from '@/lib/sse';
 
-const ACTIONS = ['skip', 'restart', 'pause', 'resume', 'seek'] as const;
+const ACTIONS = ['skip', 'restart', 'pause', 'resume', 'seek', 'play', 'finish'] as const;
 type Action = typeof ACTIONS[number];
 
 export async function POST(req: Request): Promise<Response> {
@@ -34,6 +35,17 @@ export async function POST(req: Request): Promise<Response> {
     // Same — stage tab is authoritative on player state.
   } else if (action === 'seek') {
     // Same.
+  } else if (action === 'play') {
+    const entryId = body?.entry_id;
+    if (typeof entryId !== 'string') return jsonError('bad_request', 'entry_id required', 400);
+    const entry = findEntry(db, entryId);
+    if (!entry) return jsonError('not_found', 'entry not found', 404);
+    markStatus(db, entry.id, 'playing');
+  } else if (action === 'finish') {
+    if (current) {
+      markStatus(db, current.id, 'played');
+      updateLastSang(db, current.singer.id, Date.now());
+    }
   }
 
   bus.broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
