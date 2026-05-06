@@ -55,9 +55,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
 };
 
 export function migrate(db: DB): void {
-  db.exec(SCHEMA);
-  const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insert.run(k, v);
+  const run = db.transaction(() => {
+    db.exec(SCHEMA);
+    const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insert.run(k, v);
+  });
+  run();
 }
 
 let _db: DB | null = null;
