@@ -7,6 +7,7 @@ import { getSettings } from '../settings';
 import { getBus } from '../sse';
 
 let running = false;
+let wanted = false;
 
 function cacheDir(): string { return process.env.CACHE_DIR ?? path.resolve('./data/cache'); }
 
@@ -15,22 +16,27 @@ export async function runWorkerOnce(): Promise<void> {
   const settings = getSettings(db);
   const cache = new CacheManager(cacheDir(), settings.cache_max_bytes);
   const ytdlp = getYtDlp();
-  const pending = listPendingDownloads(db);
 
-  for (const entry of pending) {
-    markStatus(db, entry.id, 'downloading');
-    getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
-    const dest = cache.pathFor(entry.youtube_id);
-    try {
-      await ytdlp.download(entry.youtube_id, dest);
-      markStatus(db, entry.id, 'ready', { cache_path: dest } as any);
-    } catch (err) {
-      if (err instanceof BotChallengeError) {
-        getBus().broadcast('bot_challenge', { detected_at: Date.now() });
+  // Drain until no pending entries remain. Re-querying after each download
+  // catches entries enqueued mid-run.
+  while (true) {
+    const pending = listPendingDownloads(db);
+    if (pending.length === 0) break;
+    for (const entry of pending) {
+      markStatus(db, entry.id, 'downloading');
+      getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
+      const dest = cache.pathFor(entry.youtube_id);
+      try {
+        await ytdlp.download(entry.youtube_id, dest);
+        markStatus(db, entry.id, 'ready', { cache_path: dest } as any);
+      } catch (err) {
+        if (err instanceof BotChallengeError) {
+          getBus().broadcast('bot_challenge', { detected_at: Date.now() });
+        }
+        markStatus(db, entry.id, 'failed', { fail_reason: (err as Error).message } as any);
       }
-      markStatus(db, entry.id, 'failed', { fail_reason: (err as Error).message } as any);
+      getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
     }
-    getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
   }
 
   // Eviction: keep currently-playing entry's file.
@@ -44,10 +50,18 @@ export async function runWorkerOnce(): Promise<void> {
 }
 
 export function kickWorker(): void {
-  if (running) return;
+  if (running) { wanted = true; return; }
   running = true;
   queueMicrotask(async () => {
-    try { await runWorkerOnce(); }
-    finally { running = false; }
+    try {
+      await runWorkerOnce();
+      while (wanted) {
+        wanted = false;
+        await runWorkerOnce();
+      }
+    } finally {
+      running = false;
+      wanted = false;
+    }
   });
 }
