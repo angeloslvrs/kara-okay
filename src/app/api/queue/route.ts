@@ -5,6 +5,7 @@ import { resolveSinger } from '@/lib/auth/session';
 import { enqueue, getActiveQueue, getCurrent } from '@/lib/queue';
 import { getSettings } from '@/lib/settings';
 import { getBus } from '@/lib/sse';
+import { kickWorker } from '@/lib/worker/download-worker';
 
 export async function GET(_req: Request): Promise<Response> {
   const db = getDb();
@@ -31,6 +32,7 @@ export async function POST(req: Request): Promise<Response> {
     duration_sec: typeof body.duration_sec === 'number' ? body.duration_sec : null,
     thumbnail_url: typeof body.thumbnail_url === 'string' ? body.thumbnail_url : null,
   });
+  kickWorker();
   const settings = getSettings(db);
   getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
   return jsonOk({ entry });
