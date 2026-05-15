@@ -2,7 +2,7 @@ import { getDb } from '@/lib/db';
 import { jsonOk, jsonError } from '@/lib/api/respond';
 import { cookiesFromRequest } from '@/lib/api/cookies';
 import { getStageTab } from '@/lib/auth/session';
-import { getActiveStage } from '@/lib/stage';
+import { getActiveStage, setPaused } from '@/lib/stage';
 import { getCurrent, markStatus, getActiveQueue, findEntry } from '@/lib/queue';
 import { getSettings } from '@/lib/settings';
 import { updateLastSang } from '@/lib/singers';
@@ -31,11 +31,16 @@ export async function POST(req: Request): Promise<Response> {
     if (current) markStatus(db, current.id, 'skipped');
   } else if (action === 'restart') {
     // Stage tab applies the actual seek client-side; server logs and broadcasts.
-  } else if (action === 'pause' || action === 'resume') {
-    // Same — stage tab is authoritative on player state.
+  } else if (action === 'pause') {
+    setPaused(db, true);
+  } else if (action === 'resume') {
+    setPaused(db, false);
   } else if (action === 'seek') {
-    // Same.
+    // Stage tab is authoritative on the seek position.
   } else if (action === 'play') {
+    if (current) {
+      return jsonError('conflict', 'already playing', 409);
+    }
     const entryId = body?.entry_id;
     if (typeof entryId !== 'string') return jsonError('bad_request', 'entry_id required', 400);
     const entry = findEntry(db, entryId);
@@ -48,7 +53,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  bus.broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
-  bus.broadcast('stage.action', { action, value: body.value ?? null });
+  const updatedActive = getActiveStage(db);
+  const paused = updatedActive?.is_paused ?? false;
+  bus.broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db), paused });
+  bus.broadcast('stage.action', { action, value: body.value ?? null, paused });
   return jsonOk({ ok: true });
 }

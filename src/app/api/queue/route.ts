@@ -4,6 +4,7 @@ import { cookiesFromRequest } from '@/lib/api/cookies';
 import { resolveSinger } from '@/lib/auth/session';
 import { enqueue, getActiveQueue, getCurrent } from '@/lib/queue';
 import { getSettings } from '@/lib/settings';
+import { getActiveStage } from '@/lib/stage';
 import { getBus } from '@/lib/sse';
 import { kickWorker } from '@/lib/worker/download-worker';
 
@@ -12,7 +13,9 @@ export async function GET(_req: Request): Promise<Response> {
   const settings = getSettings(db);
   const entries = getActiveQueue(db, settings.queue_mode);
   const current = getCurrent(db);
-  return jsonOk({ entries, current, mode: settings.queue_mode });
+  const active = getActiveStage(db);
+  const paused = active?.is_paused ?? false;
+  return jsonOk({ entries, current, mode: settings.queue_mode, paused });
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -34,6 +37,8 @@ export async function POST(req: Request): Promise<Response> {
   });
   kickWorker();
   const settings = getSettings(db);
-  getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
+  const active = getActiveStage(db);
+  const paused = active?.is_paused ?? false;
+  getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db), paused });
   return jsonOk({ entry });
 }

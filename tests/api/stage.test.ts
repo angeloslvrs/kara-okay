@@ -139,6 +139,31 @@ describe('POST /api/stage/action', () => {
     expect(findEntry(db, e.id)?.status).toBe('playing');
   });
 
+  it('pause flips is_paused and resume clears it', async () => {
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-p' }),
+    }));
+    const pauseRes = await actionPOST(makeRequest('/api/stage/action', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-p' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'pause' }),
+    }));
+    expect(pauseRes.status).toBe(200);
+    const paused = getDb().prepare('SELECT is_paused FROM stage_session').get() as { is_paused: number };
+    expect(paused.is_paused).toBe(1);
+
+    const resumeRes = await actionPOST(makeRequest('/api/stage/action', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-p' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'resume' }),
+    }));
+    expect(resumeRes.status).toBe(200);
+    const resumed = getDb().prepare('SELECT is_paused FROM stage_session').get() as { is_paused: number };
+    expect(resumed.is_paused).toBe(0);
+  });
+
   it('finish flips playing -> played and bumps last_sang_at', async () => {
     const db = freshDb();
     const { singer } = registerGuest(db, 'A');

@@ -3,7 +3,9 @@ import { freshDb } from '../helpers/test-db';
 import { makeRequest, readJson } from '../helpers/api-helpers';
 import { GET, POST } from '@/app/api/queue/route';
 import { DELETE } from '@/app/api/queue/[id]/route';
-import { COOKIE_NAME } from '@/lib/auth/session';
+import { POST as claimPOST } from '@/app/api/stage/claim/route';
+import { POST as actionPOST } from '@/app/api/stage/action/route';
+import { COOKIE_NAME, STAGE_TAB_COOKIE } from '@/lib/auth/session';
 import { registerGuest } from '@/lib/singers';
 import { enqueue } from '@/lib/queue';
 
@@ -89,5 +91,28 @@ describe('DELETE /api/queue/:id', () => {
       cookies: { [COOKIE_NAME]: cookie_token },
     }), { params: Promise.resolve({ id: e.id }) });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /api/queue paused field', () => {
+  it('returns paused:false by default', async () => {
+    const res = await GET(makeRequest('/api/queue'));
+    const body = await readJson(res);
+    expect(body.paused).toBe(false);
+  });
+
+  it('returns paused:true after pause action', async () => {
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-q' }),
+    }));
+    await actionPOST(makeRequest('/api/stage/action', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-q' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'pause' }),
+    }));
+    const res = await GET(makeRequest('/api/queue'));
+    const body = await readJson(res);
+    expect(body.paused).toBe(true);
   });
 });
