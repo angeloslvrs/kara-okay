@@ -184,6 +184,26 @@ describe('POST /api/stage/action', () => {
     const row = getDb().prepare('SELECT last_sang_at FROM singers WHERE id=?').get(singer.id) as { last_sang_at: number | null };
     expect(row.last_sang_at).toBeGreaterThanOrEqual(before);
   });
+
+  it('returns 409 when play is requested while something is already playing', async () => {
+    const db = freshDb();
+    const { singer } = registerGuest(db, 'A');
+    const a = enqueue(db, singer.id, { youtube_id: 'a', title: 'a', channel: null, duration_sec: null, thumbnail_url: null });
+    const b = enqueue(db, singer.id, { youtube_id: 'b', title: 'b', channel: null, duration_sec: null, thumbnail_url: null });
+    await claimPOST(makeRequest('/api/stage/claim', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
+    }));
+    markStatus(db, a.id, 'playing');
+    markStatus(db, b.id, 'ready');
+    const res = await actionPOST(makeRequest('/api/stage/action', {
+      method: 'POST',
+      cookies: { [STAGE_TAB_COOKIE]: 'tab-1' },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'play', entry_id: b.id }),
+    }));
+    expect(res.status).toBe(409);
+    expect(findEntry(db, b.id)!.status).toBe('ready');
+  });
 });
 
 describe('POST /api/stage/release', () => {
