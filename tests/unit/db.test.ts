@@ -24,11 +24,11 @@ describe('db migration', () => {
   it('is idempotent — re-running does not clobber user-edited settings', () => {
     const db = freshDb();
     db.prepare("UPDATE settings SET value='round_robin' WHERE key='queue_mode'").run();
-    const before = db.pragma('user_version', { simple: true }) as number;
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
     migrate(db);
     const mode = db.prepare("SELECT value FROM settings WHERE key='queue_mode'").get() as any;
     expect(mode.value).toBe('round_robin');
-    expect(db.pragma('user_version', { simple: true })).toBe(before);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
   });
 });
 
