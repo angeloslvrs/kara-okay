@@ -48,9 +48,24 @@ CREATE INDEX IF NOT EXISTS idx_singers_cookie ON singers(cookie_token);
 CREATE INDEX IF NOT EXISTS idx_singers_oidc ON singers(oidc_sub);
 `;
 
+const SCHEMA_V2 = `
+CREATE TABLE IF NOT EXISTS pending_vetos (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  singer_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_vetos_entry ON pending_vetos(entry_id);
+
+ALTER TABLE stage_session ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0;
+`;
+
 // Append-only. Each entry is a SQL string applied once when user_version is below its index+1.
 // Adding a new migration: push the next ALTER/CREATE here; never edit a past entry.
-const MIGRATIONS: string[] = [SCHEMA_V1];
+const MIGRATIONS: string[] = [SCHEMA_V1, SCHEMA_V2];
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   queue_mode: 'fifo',
@@ -72,17 +87,24 @@ export function migrate(db: DB): void {
   run();
 }
 
-let _db: DB | null = null;
+// Survive Next.js dev-mode module re-evaluation — otherwise HMR can hand
+// out fresh DB handles while old SQL statements still hold prepared cursors
+// against the previous handle.
+declare global {
+  // eslint-disable-next-line no-var
+  var __karaokeDb: DB | undefined;
+}
 
 export function getDb(): DB {
-  if (_db) return _db;
+  if (globalThis.__karaokeDb) return globalThis.__karaokeDb;
   const file = process.env.KARAOKE_DB ?? path.resolve('./data/karaoke.db');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  _db = new Database(file);
-  _db.pragma('journal_mode = WAL');
-  _db.pragma('foreign_keys = ON');
-  migrate(_db);
-  return _db;
+  const db = new Database(file);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  migrate(db);
+  globalThis.__karaokeDb = db;
+  return db;
 }
 
 export function openMemoryDb(): DB {
@@ -93,5 +115,5 @@ export function openMemoryDb(): DB {
 }
 
 export function setDbForTest(db: DB): void {
-  _db = db;
+  globalThis.__karaokeDb = db;
 }
