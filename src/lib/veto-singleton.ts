@@ -5,7 +5,10 @@ import { findEntry, markStatus, getActiveQueue, getCurrent } from './queue';
 import { getSettings } from './settings';
 import { updateLastSang, findById as findSinger } from './singers';
 
-let _store: VetoStore | null = null;
+declare global {
+  // eslint-disable-next-line no-var
+  var __karaokeVetoStore: VetoStore | undefined;
+}
 
 function applyApproval(entryId: string, action: 'restart' | 'skip') {
   const db = getDb();
@@ -15,7 +18,6 @@ function applyApproval(entryId: string, action: 'restart' | 'skip') {
     markStatus(db, entry.id, 'skipped');
     if (entry.singer.id) updateLastSang(db, entry.singer.id, Date.now());
   }
-  // 'restart' is applied client-side by the stage tab seeking to 0; we just signal via SSE.
   const settings = getSettings(db);
   getBus().broadcast('queue.updated', { entries: getActiveQueue(db, settings.queue_mode), current: getCurrent(db) });
 }
@@ -44,10 +46,14 @@ function getApprovalSingerId(entryId: string): string {
 }
 
 export function getVetoStore(): VetoStore {
-  if (!_store) _store = new VetoStore(emit);
-  return _store;
+  if (!globalThis.__karaokeVetoStore) {
+    const store = new VetoStore(emit, getDb());
+    store.rehydrate();
+    globalThis.__karaokeVetoStore = store;
+  }
+  return globalThis.__karaokeVetoStore;
 }
 
 export function resetVetoStoreForTest(): void {
-  _store = null;
+  globalThis.__karaokeVetoStore = undefined;
 }
