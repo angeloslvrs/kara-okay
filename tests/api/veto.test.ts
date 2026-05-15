@@ -18,10 +18,10 @@ async function setupPlaying() {
   resetVetoStoreForTest();
   const { cookie_token, singer } = registerGuest(db, 'A');
   const e = enqueue(db, singer.id, { youtube_id: 'y', title: 't', channel: null, duration_sec: null, thumbnail_url: null });
-  markStatus(db, e.id, 'playing');
   await stageClaimPOST(makeRequest('/api/stage/claim', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
   }));
+  markStatus(db, e.id, 'playing');
   return { db, cookie_token, entry_id: e.id };
 }
 

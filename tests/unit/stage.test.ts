@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { freshDb } from '../helpers/test-db';
 import { claimStage, releaseStage, heartbeat, getActiveStage, STAGE_HEARTBEAT_TTL_MS } from '@/lib/stage';
+import { registerGuest } from '@/lib/singers';
+import { enqueue, markStatus, findEntry } from '@/lib/queue';
 
 describe('stage', () => {
   beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
@@ -57,5 +59,25 @@ describe('stage', () => {
     claimStage(db, 'tab-1', false);
     expect(releaseStage(db, 'tab-1')).toBe(true);
     expect(getActiveStage(db)).toBeNull();
+  });
+});
+
+describe('getActiveStage stale-heartbeat sweep', () => {
+  beforeEach(() => { freshDb(); });
+
+  it('clears stale stage row and sweeps orphan playing entries', () => {
+    const db = freshDb();
+    claimStage(db, 'tab-a', false);
+    db.prepare('UPDATE stage_session SET last_heartbeat=?').run(Date.now() - STAGE_HEARTBEAT_TTL_MS - 1);
+    const { singer } = registerGuest(db, 'A');
+    const e = enqueue(db, singer.id, { youtube_id: 'y', title: 't', channel: null, duration_sec: null, thumbnail_url: null });
+    markStatus(db, e.id, 'playing');
+
+    const active = getActiveStage(db);
+    expect(active).toBeNull();
+
+    expect(findEntry(db, e.id)!.status).toBe('skipped');
+    const row = db.prepare('SELECT COUNT(*) AS c FROM stage_session').get() as { c: number };
+    expect(row.c).toBe(0);
   });
 });

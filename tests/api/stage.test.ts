@@ -143,10 +143,10 @@ describe('POST /api/stage/action', () => {
     const db = freshDb();
     const { singer } = registerGuest(db, 'A');
     const e = enqueue(db, singer.id, { youtube_id: 'y', title: 't', channel: null, duration_sec: null, thumbnail_url: null });
-    markStatus(db, e.id, 'playing');
     await claimPOST(makeRequest('/api/stage/claim', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tab_id: 'tab-1' }),
     }));
+    markStatus(db, e.id, 'playing');
     const before = Date.now();
     const res = await actionPOST(makeRequest('/api/stage/action', {
       method: 'POST',
