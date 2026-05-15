@@ -153,3 +153,11 @@ export function listPendingDownloads(db: DB): QueueEntry[] {
   const rows = db.prepare(`SELECT * FROM queue_entries WHERE status='queued' ORDER BY position ASC`).all() as Row[];
   return rows.map((r) => rowToEntry(db, r));
 }
+
+export function sweepOrphanPlaying(db: DB): number {
+  const r = db.prepare(
+    "UPDATE queue_entries SET status='skipped', ended_at=? WHERE status='playing'",
+  ).run(Date.now());
+  return r.changes;
+}
+
