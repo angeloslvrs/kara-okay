@@ -30,6 +30,11 @@ function rowToSession(r: Row): StageSession {
   };
 }
 
+/**
+ * Returns the active stage session, or null if none. Recovery read: if the
+ * row exists but heartbeat is past TTL, deletes the stale row and sweeps
+ * any orphan `playing` queue entries before returning null.
+ */
 export function getActiveStage(db: DB): StageSession | null {
   const row = db.prepare('SELECT * FROM stage_session LIMIT 1').get() as Row | undefined;
   if (!row) return null;
