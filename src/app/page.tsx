@@ -82,7 +82,10 @@ export default function PhonePage() {
       let stageActionTimer: ReturnType<typeof setTimeout> | null = null;
       const onStageAction = () => {
         if (stageActionTimer) clearTimeout(stageActionTimer);
-        stageActionTimer = setTimeout(() => refreshRef.current(), 200);
+        stageActionTimer = setTimeout(() => {
+          if (cancelled) return;
+          refreshRef.current();
+        }, 200);
       };
       es.addEventListener('queue.updated', onUpdate);
       es.addEventListener('stage.action', onStageAction);
